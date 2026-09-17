@@ -14,16 +14,16 @@ void midi_flush(usb_context_t *ctx, uint8_t *buf, int len)
         return; // No MIDI OUT endpoint
 
     usb_transfer_channel_start(ctx, 3, ctx->device.address,
-                               ctx->midi_out.endpoint, // 2
+                               ctx->midi_out.endpoint,
                                EP_TYPE_INTERRUPT, false /*OUT*/,
-                               ctx->midi_out.ep_mps,           // 64
-                               ctx->midi_out.interrupt_toggle, // DATA0 for the very first one
-                               len /*bytes, multiple of 4*/, 1 /*packet*/,
+                               ctx->midi_out.ep_mps,
+                               ctx->midi_out.interrupt_toggle,
+                               len, 1 /*packet*/,
                                BUS_ADDRESS(&buf[0]));
     int r = usb_transfer_channel_wait(ctx, 3);
     if (r == 0)
-        ctx->midi_out.interrupt_toggle ^= 2; // ACK → next is DATA1
-    else if (r == -3 || r == -5)             /* NAK / frame overrun: resend, SAME toggle */
+        ctx->midi_out.interrupt_toggle ^= 2;
+    else if (r == -3 || r == -5)
         printk("OUT NAK / frame overrun, retry\n");
     else
         printk("OUT failed %d\n", r); // STALL / XACTERR
@@ -39,14 +39,14 @@ void midi_poll(usb_context_t *ctx)
     if (sta >= 0)
     {
         printk("MIDI IN: ");
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < sta; i++)
             printk("%x ", buf[i]);
         printk("\n");
         if ((buf[0] & 0x0F) == 0x9)
         {
-            buf[0] = 0x09;            // Note On
-            buf[1] = 0x90;            // Channel 1
-            buf[3] = buf[3] ? 21 : 0; // Velocity: 21 if pressed, 0 if released
+            buf[0] = 0x09; // Note On
+            buf[1] = 0x90; // Channel 1
+            buf[3] = buf[3] ? 67 : 0;
             midi_flush(ctx, buf, 4);
         }
     }
