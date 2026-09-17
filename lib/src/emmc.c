@@ -182,14 +182,14 @@ bool mailbox_power_check(uint32_t type)
 
 bool wait_reg_mask(reg32 *reg, uint32_t mask, bool set, uint32_t timeout)
 {
-    for (int cycles = 0; cycles <= timeout; cycles++)
+    for (int cycles = 0; cycles <= timeout * 100; cycles++)
     {
         if ((*reg & mask) ? set : !set)
         {
             return true;
         }
 
-        delay_ms(1);
+        delay_us(10);
     }
 
     return false;
@@ -812,6 +812,9 @@ static bool set_scr()
     uint32_t spec = (scr0 >> (56 - 32)) & 0xf;
     uint32_t spec3 = (scr0 >> (47 - 32)) & 0x1;
     uint32_t spec4 = (scr0 >> (42 - 32)) & 0x1;
+    uint32_t card_support_width = (scr0 >> 16) & 0xF;
+    printk("EMMC_DEBUG: SCR0: %x spec: %d spec3: %d spec4: %d card_support_width: %d\n", scr0, spec, spec3, spec4, card_support_width);
+    device.scr.bus_widths = card_support_width;
 
     if (spec == 0)
     {
@@ -927,6 +930,21 @@ static bool emmc_card_reset()
         return false;
     }
 
+    // if (!select_card())
+    // {
+    //     return false;
+    // }
+
+    if (device.scr.bus_widths & 0x4)
+    {
+        printk("EMMC_DEBUG: Card supports 4-bit bus width\n");
+        if (!emmc_app_command(6, 2, 2000))
+            printk("EMMC_ERR: Failed to set bus width\n");
+        else
+            EMMC->control[0] |= (1 << 1);
+    }
+    printk("Successfully set bits\n");
+    printk("DEBUG - GPIO CONF: %b %b\n", *((volatile uint32_t *)0x20200010), *((volatile uint32_t *)0x20200014));
     // enable all interrupts
     EMMC->int_flags = 0xFFFFFFFF;
 
@@ -1244,7 +1262,9 @@ uint32_t get_clock_divider(uint32_t base_clock, uint32_t target_rate)
 
 bool switch_clock_rate(uint32_t base_clock, uint32_t target_rate)
 {
+    printk("Switching clock rate base %u target %u\n", base_clock, target_rate);
     uint32_t divider = get_clock_divider(base_clock, target_rate);
+    printk("Calculated divider: %x\n", divider);
 
     while ((EMMC->status & (EMMC_STATUS_CMD_INHIBIT | EMMC_STATUS_DAT_INHIBIT)))
     {
@@ -1275,7 +1295,7 @@ bool emmc_setup_clock()
     EMMC->control2 = 0;
 
     uint32_t rate = mailbox_clock_rate(CT_EMMC);
-    device.base_clock = rate;  // Store for switch_clock_rate later
+    device.base_clock = rate; // Store for switch_clock_rate later
 
     uint32_t n = EMMC->control[1];
     n |= EMMC_CTRL1_CLK_INT_EN;

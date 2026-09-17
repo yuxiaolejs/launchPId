@@ -6,7 +6,7 @@
 #define FS_SECTOR_SIZE 512
 #define ENABLE_LFN 0
 
-#define ENABLE_FS_CACHE 1
+#define ENABLE_FS_CACHE 0
 
 /// begin cache
 #define FS_CACHE_SLOTS 2048 * 16 // 16MB cache
