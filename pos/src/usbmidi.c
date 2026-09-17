@@ -6,9 +6,8 @@
 
 static uint8_t midi_buf[64];
 static uint8_t midi_buf_write_idx = 0;
-static uint8_t midi_buf_read_idx = 0;
 
-void midi_flush(usb_context_t *ctx, uint8_t *buf, int len)
+void midi_flush(usb_context_t *ctx)
 {
     if (ctx->midi_out.endpoint == 0)
         return; // No MIDI OUT endpoint
@@ -18,8 +17,8 @@ void midi_flush(usb_context_t *ctx, uint8_t *buf, int len)
                                EP_TYPE_INTERRUPT, false /*OUT*/,
                                ctx->midi_out.ep_mps,
                                ctx->midi_out.interrupt_toggle,
-                               len, 1 /*packet*/,
-                               BUS_ADDRESS(&buf[0]));
+                               midi_buf_write_idx, 1 /*packet*/,
+                               BUS_ADDRESS(&midi_buf[0]));
     int r = usb_transfer_channel_wait(ctx, 3);
     if (r == 0)
         ctx->midi_out.interrupt_toggle ^= 2;
@@ -29,7 +28,7 @@ void midi_flush(usb_context_t *ctx, uint8_t *buf, int len)
         printk("OUT failed %d\n", r); // STALL / XACTERR
 }
 
-void midi_poll(usb_context_t *ctx)
+int midi_poll(usb_context_t *ctx, uint8_t *out)
 {
     if (ctx->midi_in.endpoint == 0)
         return; // No MIDI IN endpoint
@@ -42,19 +41,29 @@ void midi_poll(usb_context_t *ctx)
         for (int i = 0; i < sta; i++)
             printk("%x ", buf[i]);
         printk("\n");
-        if ((buf[0] & 0x0F) == 0x9)
-        {
-            buf[0] = 0x09; // Note On
-            buf[1] = 0x90; // Channel 1
-            buf[3] = buf[3] ? 67 : 0;
-            midi_flush(ctx, buf, 4);
-        }
+        memcpy(out, buf, sta);
+        return sta;
     }
     else
     {
         if (sta != -3)
+        {
             printk("MIDI IN poll failed: %d\n", sta);
+            return sta;
+        }
     }
+    return 0;
+}
+
+void midi_send_event(uint8_t *event)
+{
+    if (midi_buf_write_idx + 4 > sizeof(midi_buf))
+    {
+        printk("MIDI buffer full, dropping event\n");
+        return;
+    }
+    for (int i = 0; i < 4; i++)
+        midi_buf[midi_buf_write_idx++] = event[i];
 }
 
 usb_context_t *do_usb()

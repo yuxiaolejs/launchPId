@@ -6,18 +6,22 @@
 #include "pictl.h"
 #include "pcm.h"
 #include "dmx.h"
-#include "engine.h"
+#include "project.h"
+#include "emmc.h"
+#include "pifat.h"
 
 void notmain(void)
 {
     kalloc_init();
+    emmc_init();
+    fat_meta_t *fat = fat32_init();
     printk("INIT!\n");
-    usb_context_t *usb_ctx = do_usb();
+    engine_init();
+    project_init(fat, "FADED   LPD");
     printk("USB INIT DONE!\n");
-    while(1)
+    while (1)
     {
-        midi_poll(usb_ctx);
-        udelay(1000);
+        engine_tick();
     }
     rpi_reboot();
 }
