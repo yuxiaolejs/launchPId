@@ -103,4 +103,18 @@ static inline void write_u32(uint8_t *p, uint32_t v)
     p[3] = (v >> 24) & 0xFF;
 }
 
+static inline void enableICache(void)
+{
+    asm volatile(
+        "MOV r0, #0\n"
+        "MCR p15, 0, r0, c7, c5, 0\n" // Invalidate I-cache
+        "MRC p15, 0, r0, c1, c0, 0\n" // Read SCTLR
+        "BIC r0, r0, #2\n"            // Disable D-cache
+        "BIC r0, r0, #1\n"            // MMU disable
+        "ORR r0, r0, #0x1000\n"       // Set I-cache enable bit
+        "ORR r0, r0, #0x0800\n"       // Branch pred on
+        "MCR p15, 0, r0, c1, c0, 0\n" // Write back to SCTLR
+    );
+}
+
 #endif

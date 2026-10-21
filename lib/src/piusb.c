@@ -1022,10 +1022,10 @@ int usb_interrupt_poll_ch(usb_context_t *ctx, int ch, int buf_idx,
         for (int i = 0; i < len; i++)
             dst[i] = src[i];
         uint32_t tsz = readl(HCTSIZ(ch));
-        if (PIUSB_DEBUG)
-            printk("  CH%d XFERCOMP: tsz=%x, pktcnt=%d, xfersize=%d\n",
-                   ch, tsz, (tsz >> HCTSIZ_PKTCNT_SHIFT) & 0x3FF,
-                   64 - tsz & HCTSIZ_XFERSIZE_MASK);
+        // if (PIUSB_DEBUG)
+        //     printk("  CH%d XFERCOMP: tsz=%x, pktcnt=%d, xfersize=%d\n",
+        //            ch, tsz, (tsz >> HCTSIZ_PKTCNT_SHIFT) & 0x3FF,
+        //            64 - tsz & HCTSIZ_XFERSIZE_MASK);
 
         ep_state->interrupt_toggle ^= 2;
 

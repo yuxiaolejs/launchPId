@@ -13,6 +13,7 @@
 void notmain(void)
 {
     kalloc_init();
+    enableICache();
     emmc_init();
     fat_meta_t *fat = fat32_init();
     printk("INIT!\n");

@@ -182,14 +182,12 @@ bool mailbox_power_check(uint32_t type)
 
 bool wait_reg_mask(reg32 *reg, uint32_t mask, bool set, uint32_t timeout)
 {
-    for (int cycles = 0; cycles <= timeout * 100; cycles++)
-    {
+    uint32_t end_time = timer_get_usec() + timeout * 1000;
+    for (;;) {
         if ((*reg & mask) ? set : !set)
-        {
             return true;
-        }
-
-        delay_us(10);
+        if (timer_get_usec() > end_time)
+            return false;
     }
 
     return false;
@@ -399,36 +397,26 @@ static bool emmc_issue_command(emmc_cmd cmd, uint32_t arg, uint32_t timeout)
                cmd.index, EMMC->status, EMMC->int_flags);
     EMMC->cmd_xfer_mode = command_reg;
 
-    delay_ms(2);
-
-    int times = 0;
-
-    while (times < timeout)
+    uint32_t cmd_deadline = timer_get_usec() + timeout * 1000;
+    for (;;)
     {
         uint32_t reg = EMMC->int_flags;
 
         if (reg & 0x8001)
         {
-            if (reg & 0x8001)
-            {
-                if (EMMC_DEBUG)
-                    printk("CMD%d DONE: int_flags=%x status=%x\n",
-                           cmd.index, reg, EMMC->status);
-                break;
-            }
+            if (EMMC_DEBUG)
+                printk("CMD%d DONE: int_flags=%x status=%x\n",
+                       cmd.index, reg, EMMC->status);
             break;
         }
 
-        delay_ms(1);
-        times++;
-    }
-
-    if (times >= timeout)
-    {
-        // just doing a warn for this because sometimes it's ok.
-        printk("EMMC_WARN: emmc_issue_command timed out\n");
-        device.last_success = false;
-        return false;
+        if (timer_get_usec() > cmd_deadline)
+        {
+            // just doing a warn for this because sometimes it's ok.
+            printk("EMMC_WARN: emmc_issue_command timed out\n");
+            device.last_success = false;
+            return false;
+        }
     }
 
     uint32_t intr_val = EMMC->int_flags;

@@ -3,44 +3,68 @@
 #include "cstr.h"
 #include "piusb.h"
 #include "pictl.h"
-
-static uint8_t midi_buf[64];
+#define MIDI_BUF_SIZE 128
+static uint8_t midi_buf[MIDI_BUF_SIZE];
 static uint8_t midi_buf_write_idx = 0;
+static uint8_t midi_buf_read_idx = 0;
+
+static int curr_xfer_retry = 0;
 
 void midi_flush(usb_context_t *ctx)
 {
-    if (ctx->midi_out.endpoint == 0)
+    int r = -3;
+    if (ctx->midi_out.endpoint == 0 || midi_buf_write_idx == midi_buf_read_idx)
         return; // No MIDI OUT endpoint
+    uint32_t avail = (midi_buf_write_idx - midi_buf_read_idx + MIDI_BUF_SIZE) % MIDI_BUF_SIZE;
+    uint32_t xfersize = avail;
+    if (xfersize > 64)
+        xfersize = 64;
+    if (xfersize > MIDI_BUF_SIZE - midi_buf_read_idx)
+        xfersize = MIDI_BUF_SIZE - midi_buf_read_idx;
+    xfersize &= ~3u;
+    int retries = 3;
 
     usb_transfer_channel_start(ctx, 3, ctx->device.address,
                                ctx->midi_out.endpoint,
                                EP_TYPE_INTERRUPT, false /*OUT*/,
                                ctx->midi_out.ep_mps,
                                ctx->midi_out.interrupt_toggle,
-                               midi_buf_write_idx, 1 /*packet*/,
-                               BUS_ADDRESS(&midi_buf[0]));
-    int r = usb_transfer_channel_wait(ctx, 3);
+                               xfersize, 1 /*packet*/,
+                               BUS_ADDRESS(&midi_buf[midi_buf_read_idx]));
+    r = usb_transfer_channel_wait(ctx, 3);
     if (r == 0)
+    {
         ctx->midi_out.interrupt_toggle ^= 2;
-    else if (r == -3 || r == -5)
-        printk("OUT NAK / frame overrun, retry\n");
+        midi_buf_read_idx += xfersize;
+        midi_buf_read_idx %= MIDI_BUF_SIZE;
+        curr_xfer_retry = 0;
+    }
     else
-        printk("OUT failed %d\n", r); // STALL / XACTERR
+    {
+        curr_xfer_retry += 1;
+        if (curr_xfer_retry > 5)
+        {
+            printk("MIDI OUT transfer failed %d, dropping %d bytes\n", r, xfersize);
+            midi_buf_read_idx += xfersize;
+            midi_buf_read_idx %= MIDI_BUF_SIZE;
+            curr_xfer_retry = 0;
+        }
+    }
+    // else if (r == -3 || r == -5)
+    //     printk("OUT NAK / frame overrun, retry\n");
+    // else
+    //     printk("OUT failed %d\n", r); // STALL / XACTERR
 }
 
 int midi_poll(usb_context_t *ctx, uint8_t *out)
 {
     if (ctx->midi_in.endpoint == 0)
-        return; // No MIDI IN endpoint
+        return 0; // No MIDI IN endpoint
 
     uint8_t *buf = ctx->dma.int_buf[ctx->dma.int_buf_idx];
     int sta = usb_interrupt_poll_ch(ctx, 2, ctx->dma.int_buf_idx, ctx->device.address, &ctx->midi_in, buf, 64);
     if (sta >= 0)
     {
-        printk("MIDI IN: ");
-        for (int i = 0; i < sta; i++)
-            printk("%x ", buf[i]);
-        printk("\n");
         memcpy(out, buf, sta);
         return sta;
     }
@@ -57,13 +81,16 @@ int midi_poll(usb_context_t *ctx, uint8_t *out)
 
 void midi_send_event(uint8_t *event)
 {
-    if (midi_buf_write_idx + 4 > sizeof(midi_buf))
+    if ((midi_buf_write_idx + 4) % MIDI_BUF_SIZE == midi_buf_read_idx)
     {
         printk("MIDI buffer full, dropping event\n");
         return;
     }
     for (int i = 0; i < 4; i++)
+    {
         midi_buf[midi_buf_write_idx++] = event[i];
+        midi_buf_write_idx %= MIDI_BUF_SIZE;
+    }
 }
 
 usb_context_t *do_usb()
