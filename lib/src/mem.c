@@ -176,7 +176,7 @@ static const uint32_t size_class_sizes[NUM_SIZE_CLASSES] = {
     1048576 * 2, // 2MB MAX
     1048576 * 4, // 4MB MAX
     1048576 * 8, // 8MB MAX
-    1048576 * 16, // 16MB MAX
+    1048576 * 64, // 16MB MAX
 };
 
 static const uint32_t size_class_arena_sizes[NUM_SIZE_CLASSES] = {
@@ -200,7 +200,7 @@ static const uint32_t size_class_arena_sizes[NUM_SIZE_CLASSES] = {
     1048576 * 2 * 2, // ideally only two 1MB pages
     1048576 * 4 * 2, // ideally only two 1MB pages
     1048576 * 8 * 2, // ideally only two 1MB pages
-    1048576 * 16 * 2, // ideally only two 1MB pages
+    1048576 * 64 * 2, // ideally only two 1MB pages
 };
 
 static aligned_size_class_t size_classes[NUM_SIZE_CLASSES];

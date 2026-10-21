@@ -3,6 +3,7 @@
 #include "dma.h"
 #include "piusb.h"
 #include "pifat.h"
+#include "pcm_aud.h"
 
 #define AUDIO_SAMPLE_BUFFER_SIZE 1024
 #define AUDIO_FRAMES (AUDIO_SAMPLE_BUFFER_SIZE / 2)
@@ -76,20 +77,49 @@ void project_init(fat_meta_t *fat, const char *path)
 
 void audio_dma_init()
 {
+    gpio_pin_set_func(PCM_DOUT_PIN, GPIO_ALT0);
+    gpio_pin_set_func(PCM_CLK_PIN, GPIO_ALT0);
+    gpio_pin_set_func(PCM_FS_PIN, GPIO_ALT0);
+    MK_REG(I2S_CS) = I2S_CS_EN | I2S_CS_STBY;
+    delay_us(100);
+    MK_REG(I2S_MODE) = I2S_MODE_FLEN(63) | I2S_MODE_FSLEN(32) | I2S_MODE_CLKI | I2S_MODE_FSI;
+    MK_REG(I2S_TXC) = I2S_TXC_CH1EN | I2S_TXC_CH1WEX |
+                      I2S_TXC_CH1WID(8) | I2S_TXC_CH1POS(1) |
+                      I2S_TXC_CH2EN | I2S_TXC_CH2WEX |
+                      I2S_TXC_CH2WID(8) | I2S_TXC_CH2POS(33);
+
+    MK_REG(I2S_CS) |= I2S_CS_TXCLR;
+    delay_us(100); /* datasheet wants 2 PCM clocks; this is ~25 of them */
+
+    MK_REG(I2S_CS) |= I2S_CS_TXERR; /* write 1 to clear a stale underrun */
+
+    MK_REG(I2S_DREQ) = (0x10 << 24) | (0x30 << 8);
+
+    // printk("Priming FIFO with mark before starting DMA\n");
+    // while (MK_REG(I2S_CS) & I2S_CS_TXD)
+    //     MK_REG(I2S_FIFO) = 0xFFFFFFFFu;
+
+    // DMA_ENABLE
+    MK_REG(I2S_CS) |= I2S_CS_DMAEN;
     for (int i = 0; i < AUDIO_BUFS; i++)
     {
         for (int w = 0; w < AUDIO_SAMPLE_BUFFER_SIZE; w++)
             audio_sample_buffer[i][w] = AUDIO_PWM_RANGE / 2;
-        audio_cb[i].ti = DMA_TI_PWM_TX;
+
+        audio_cb[i].ti = DMA_TI_PCM_TX;
         audio_cb[i].source_ad = ARM_TO_DMA_BUS((uint32_t)audio_sample_buffer[i]);
-        audio_cb[i].dest_ad = 0x7E20C018;
+        audio_cb[i].dest_ad = 0x7E000000 | (I2S_FIFO & 0xFFFFFF);
         audio_cb[i].txfr_len = sizeof(audio_sample_buffer[i]);
         audio_cb[i].stride = 0;
         audio_cb[i].nextconbk = ARM_TO_DMA_BUS((uint32_t)&audio_cb[(i + 1) % AUDIO_BUFS]);
     }
-    PUT32(DMA_CS_REG(0), 1 << 31);
+
+    MK_REG(I2S_CS) |= I2S_CS_TXON;
+    PUT32(DMA_CS_REG(0), 1 << 31); // reset first: it clears CONBLK_AD
     PUT32(DMA_CONBLK_AD_REG(0), ARM_TO_DMA_BUS((uint32_t)&audio_cb[0]));
     PUT32(DMA_CS_REG(0), 1);
+
+    printk("DMA RUNNING, returning control\n");
 }
 
 void dispatch_audio_buffer()
@@ -149,18 +179,18 @@ void dispatch_audio_buffer()
 
     for (int f = 0; f < AUDIO_FRAMES; f++)
     {
-        int32_t l = AUDIO_PWM_RANGE / 2 + ((mix_l[f] * AUDIO_PWM_RANGE) >> 16);
-        int32_t r = AUDIO_PWM_RANGE / 2 + ((mix_r[f] * AUDIO_PWM_RANGE) >> 16);
-        if (l < 0)
-            l = 0;
-        if (l > AUDIO_PWM_RANGE - 1)
-            l = AUDIO_PWM_RANGE - 1;
-        if (r < 0)
-            r = 0;
-        if (r > AUDIO_PWM_RANGE - 1)
-            r = AUDIO_PWM_RANGE - 1;
-        audio_sample_buffer[i][2 * f] = l;     // PWM0
-        audio_sample_buffer[i][2 * f + 1] = r; // PWM1
+        // int32_t l = AUDIO_PWM_RANGE / 2 + ((mix_l[f] * AUDIO_PWM_RANGE) >> 16);
+        // int32_t r = AUDIO_PWM_RANGE / 2 + ((mix_r[f] * AUDIO_PWM_RANGE) >> 16);
+        // if (l < 0)
+        //     l = 0;
+        // if (l > AUDIO_PWM_RANGE - 1)
+        //     l = AUDIO_PWM_RANGE - 1;
+        // if (r < 0)
+        //     r = 0;
+        // if (r > AUDIO_PWM_RANGE - 1)
+        //     r = AUDIO_PWM_RANGE - 1;
+        audio_sample_buffer[i][2 * f] = mix_l[f] << 15;     // PWM0
+        audio_sample_buffer[i][2 * f + 1] = mix_r[f] << 15; // PWM1
     }
 }
 
@@ -261,8 +291,18 @@ void engine_init()
     memset(live_event_trigger_time, 0, sizeof(live_event_trigger_time));
     project = NULL;
     engine_usb_ctx = do_usb();
-    pwm_init();
+    // pwm_init();
+    gpio_set_output(0);
+    gpio_set_output(1);
+    gpio_set_on(0);
+    gpio_set_off(1);
+    pcm_dmx_init();
+    // pcm_dma_start(audio_sample_buffer[0], sizeof(audio_sample_buffer[0]));
     audio_dma_init();
+    printk("DMA INIT DONE\n");
+    // while(1){
+    //     printk("DMACS %b   PCM %b\n", MK_REG(DMA_CS_REG(0)), MK_REG(I2S_CS));
+    // }
 }
 
 // ============================================================================

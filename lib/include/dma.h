@@ -8,6 +8,8 @@
 
 #define DMA_CS_REG(n) (DMA_CHAN_BASE(n) + 0x00)
 #define DMA_CONBLK_AD_REG(n) (DMA_CHAN_BASE(n) + 0x04)
+#define DMA_SRC_AD(n) (DMA_CHAN_BASE(n) + 0xc)
+#define DMA_DEST_AD(n) (DMA_CHAN_BASE(n) + 0x10)
 
 #define DMA_CS_ACTIVE (1 << 0)
 #define DMA_CS_END (1 << 1)

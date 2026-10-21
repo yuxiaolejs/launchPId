@@ -19,7 +19,8 @@ void notmain(void)
     printk("INIT!\n");
     engine_init();
     project_init(fat, "FADED   LPD");
-    printk("USB INIT DONE!\n");
+    // project_init(fat, "SPECTRE LPD");
+    printk("ALL INIT DONE!\n");
     while (1)
     {
         engine_tick();
