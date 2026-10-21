@@ -39,6 +39,9 @@ void midi_flush(usb_context_t *ctx)
         midi_buf_read_idx %= MIDI_BUF_SIZE;
         curr_xfer_retry = 0;
     }
+    else if (r == -3 || r == -5)
+        // printk("OUT NAK / frame overrun, retry\n");
+        {}
     else
     {
         curr_xfer_retry += 1;

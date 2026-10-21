@@ -1408,7 +1408,7 @@ int usb_midi_full_init(usb_context_t *ctx)
     }
 
     // 4. Get configuration descriptor header
-    static uint8_t config_buf[256] __attribute__((aligned(32)));
+    static uint8_t config_buf[512] __attribute__((aligned(32)));
     if (usb_get_config_descriptor(ctx, ctx->device.address, config_buf, 9) == 0)
     {
         uint16_t total_len = config_buf[2] | (config_buf[3] << 8);
@@ -1416,7 +1416,7 @@ int usb_midi_full_init(usb_context_t *ctx)
             printk("Config total length: %d\n", total_len);
 
         // Get full config
-        if (total_len <= 256)
+        if (total_len <= 512)
         {
             usb_get_config_descriptor(ctx, ctx->device.address, config_buf, total_len);
 
